@@ -40,3 +40,5 @@ jobs:
             nohup python rds.py > backend.log 2>&1 &
 
             echo "✅ Backend running"
+
+            #The End
