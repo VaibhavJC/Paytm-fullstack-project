@@ -9,7 +9,7 @@ jobs:
     runs-on: ubuntu-latest
 
     steps:
-      - name: Deploy Backend using Bastion
+      - name: Deploy Backend using Bastion (First Time)
         uses: appleboy/ssh-action@v1.0.3
         with:
           host: ${{ secrets.BACKEND_PRIVATE_IP }}
@@ -21,81 +21,55 @@ jobs:
           proxy_username: ${{ secrets.BASTION_USER }}
           proxy_key: ${{ secrets.BASTION_KEY }}
           
-          # Fix timeout issue
-          timeout: 30m
+          # Extended timeout for first deployment
+          timeout: 45m
           script_stop: true
 
           script: |
             set -e
-            echo "🚀 Backend deployment started"
+            echo "🚀 FIRST TIME Backend deployment started"
 
-            # Install Git if not present
-            if ! command -v git &> /dev/null; then
-              echo "Installing Git..."
-              if command -v yum &> /dev/null; then
-                sudo yum update -y && sudo yum install -y git
-              elif command -v apt &> /dev/null; then
-                sudo apt update && sudo apt install -y git
-              else
-                echo "Unsupported package manager"
-                exit 1
-              fi
-            else
-              echo "✅ Git already installed"
+            # Install dependencies (Git + Python tools)
+            echo "📦 Installing system dependencies..."
+            if command -v yum &> /dev/null; then
+              sudo yum update -y &>/dev/null
+              sudo yum install -y git python3 python3-pip &>/dev/null
+            elif command -v apt &> /dev/null; then
+              sudo apt update &>/dev/null
+              sudo apt install -y git python3 python3-pip python3-venv -y &>/dev/null
             fi
+            echo "✅ System dependencies installed"
 
+            # Clone repository (fresh install)
+            echo "🔄 Cloning Paytm-fullstack-project..."
             REPO_DIR="/home/ec2-user/Paytm-fullstack-project"
-            REPO_URL="https://github.com/CloudTechDevOps/Paytm-fullstack-project.git"
+            rm -rf "$REPO_DIR"  # Clean any partial clone
+            git clone https://github.com/CloudTechDevOps/Paytm-fullstack-project.git "$REPO_DIR"
+            cd "$REPO_DIR/Backend"
 
-            if [ -d "$REPO_DIR/.git" ]; then
-              echo "📥 Repository exists, pulling latest changes"
-              cd "$REPO_DIR"
-              git pull origin main
-            else
-              echo "🔄 Cloning repository for first time"
-              git clone "$REPO_URL" "$REPO_DIR"
-              cd "$REPO_DIR"
-            fi
-
-            cd Backend
-
-            echo "🐍 Setting up Python environment"
-            python3 -m venv venv || true
+            # Setup Python environment
+            echo "🐍 Creating Python virtual environment..."
+            python3 -m venv venv
             source venv/bin/activate
-
             pip install --upgrade pip
             pip install -r requirements.txt
 
-            echo "🛑 Stopping existing backend process"
-            pkill -f rds.py || true
-            sleep 3
-
-            echo "▶️ Starting backend service"
-            cd /home/ec2-user/Paytm-fullstack-project/Backend
+            echo "▶️ Starting Backend service (detached)..."
             nohup python rds.py > backend.log 2>&1 < /dev/null &
-            
-            # FIXED: Use process pattern matching instead of fragile PID
-            sleep 5
-            
-            if pgrep -f "python.*rds.py" > /dev/null; then
-              echo "✅ Backend process is running (PID: $(pgrep -f 'python.*rds.py'))"
-              echo "📋 Recent logs:"
-              tail -10 backend.log || echo "Log file not ready yet"
-              echo "🎉 Backend deployment completed!"
-            else
-              echo "❌ Backend failed to start!"
-              echo "📋 Error logs:"
-              tail -20 backend.log || echo "No log file found"
-              echo "🔍 Active processes:"
-              ps aux | grep rds.py | grep -v grep || echo "No rds.py processes"
-              exit 1
-            fi
+            sleep 10  # Give startup time
 
-            # Double-check after longer wait
-            sleep 3
-            if ! pgrep -f "python.*rds.py" > /dev/null; then
-              echo "⚠️ Backend process died after initial start"
-              tail -20 backend.log
+            # SIMPLE PROCESS CHECK - Works 100% for first deployment
+            if pgrep -f "rds.py" > /dev/null; then
+              PID=$(pgrep -f "rds.py")
+              echo "✅ Backend started successfully! PID: $PID"
+              echo "📋 First 10 lines of logs:"
+              tail -10 backend.log || echo "Logs not ready yet"
+              echo "🎉 FIRST DEPLOYMENT COMPLETED!"
+            else
+              echo "❌ Backend FAILED to start!"
+              echo "📋 Check logs:"
+              tail -20 backend.log || echo "No logs yet"
+              echo "🔍 Running processes:"
+              ps aux | grep rds.py || echo "No rds.py process found"
               exit 1
             fi
-            echo "✅ Final verification passed!"
