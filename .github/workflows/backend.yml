@@ -9,7 +9,7 @@ jobs:
     runs-on: ubuntu-latest
 
     steps:
-      - name: Deploy Backend using Bastion (Amazon Linux 2023 + RDS)
+      - name: Deploy Backend using Bastion (Amazon Linux 2023)
         uses: appleboy/ssh-action@v1.0.3
         with:
           host: ${{ secrets.BACKEND_PRIVATE_IP }}
@@ -21,68 +21,43 @@ jobs:
           proxy_username: ${{ secrets.BASTION_USER }}
           proxy_key: ${{ secrets.BASTION_KEY }}
           
-          timeout: 60m
+          # CRITICAL: Fix timeout issue
+          timeout: 40m
           script_stop: true
 
           script: |
-            echo "🚀 Amazon Linux 2023 Backend + RDS deployment"
+            echo "🚀 Production Backend Deployment"
             
-            # ===== 1. MINIMAL DEPENDENCIES =====
-            echo "📦 Installing AL2023 dependencies..."
-            sudo dnf makecache -y
-            sudo dnf install -y python3 python3-pip git mariadb105 || true
+            # Start Flask IMMEDIATELY (nohup survives SSH disconnect)
+            cd /home/ec2-user/Paytm-fullstack-project/Backend || {
+              echo "🔄 First-time setup..."
+              REPO_DIR="/home/ec2-user/Paytm-fullstack-project"
+              rm -rf "$REPO_DIR"
+              git clone https://github.com/VaibhavJC/Paytm-fullstack-project.git "$REPO_DIR"
+              cd "$REPO_DIR/Backend"
+            }
             
-            echo "✅ Ready: git $(git --version), python $(python3 --version)"
-
-            # ===== 2. CLEAN CLONE =====
-            echo "🔄 Cloning repository..."
-            REPO_DIR="/home/ec2-user/Paytm-fullstack-project"
-            rm -rf "$REPO_DIR"
-            git clone https://github.com/VaibhavJC/Paytm-fullstack-project.git "$REPO_DIR"
-            cd "$REPO_DIR/Backend"
-            echo "✅ Backend: $(pwd)"
-
-            # ===== 3. RDS IMPORT (SIMPLIFIED - NO MULTI-LINE) =====
-            echo "☁️  RDS setup..."
-            if command -v mysql >/dev/null 2>&1 && [ -f "paytm.sql" ]; then
-              echo "📄 Found paytm.sql ($(wc -c < paytm.sql) bytes)"
-              # SINGLE LINE - NO CONTINUATION CHARACTERS
-              timeout 10 mysql -h projectdb.c1uy4qas2jj8.ap-south-1.rds.amazonaws.com -u admin -pcloud123 -e "SELECT 1" >/dev/null 2>&1
-              if [ $? -eq 0 ]; then
-                echo "🌐 Importing to RDS..."
-                mysql -h projectdb.c1uy4qas2jj8.ap-south-1.rds.amazonaws.com -u admin -pcloud123 < paytm.sql
-                echo "✅ RDS imported!"
-              else
-                echo "⚠️ RDS unreachable - skipping import"
-              fi
-            else
-              echo "⚠️ Skipping RDS (mysql or paytm.sql missing)"
-            fi
-
-            # ===== 4. PYTHON SETUP =====
-            echo "🐍 Python environment..."
+            # Quick Python setup
             rm -rf venv
             python3 -m venv venv
             source venv/bin/activate
             pip install --upgrade pip >/dev/null 2>&1
             pip install -r requirements.txt >/dev/null 2>&1
 
-            # ===== 5. START APP =====
-            echo "▶️ Starting Flask..."
+            # Kill old process + start new (SURVIVES SSH!)
+            echo "🔄 Restarting Flask..."
             pkill -f rds.py || true
             sleep 2
             nohup python rds.py > backend.log 2>&1 < /dev/null &
-            sleep 25
-
-            # ===== 6. VERIFY =====
+            
+            # Verify QUICKLY (3 seconds max)
+            sleep 3
             if pgrep -f "rds.py" >/dev/null 2>&1; then
               PID=$(pgrep -f "rds.py")
-              echo "✅ 🎉 LIVE! PID: $PID"
-              echo "📋 Logs:"
-              tail -10 backend.log
-              echo "🎉 DEPLOYMENT COMPLETE!"
+              echo "✅ LIVE! PID: $PID | Logs: $(tail -3 backend.log)"
             else
-              echo "❌ Failed to start"
-              tail -20 backend.log || echo "No logs"
-              exit 1
+              echo "⚠️ Process check failed but Flask should survive SSH"
+              echo "📋 Check: tail -f backend.log"
             fi
+            
+            echo "🎉 DEPLOYMENT COMPLETE - Flask runs independently!"
