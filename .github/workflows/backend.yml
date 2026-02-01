@@ -26,12 +26,12 @@ jobs:
 
           script: |
             echo "🚀 Amazon Linux 2023 Backend + RDS deployment"
-            set -e
-
-            # ===== 1. MINIMAL DEPENDENCIES (Amazon Linux 2023) =====
+            
+            # ===== 1. MINIMAL DEPENDENCIES =====
             echo "📦 Installing AL2023 dependencies..."
-            sudo dnf makecache
+            sudo dnf makecache -y
             sudo dnf install -y python3 python3-pip git mariadb105 || true
+            
             echo "✅ Ready: git $(git --version), python $(python3 --version)"
 
             # ===== 2. CLEAN CLONE =====
@@ -41,11 +41,48 @@ jobs:
             git clone https://github.com/VaibhavJC/Paytm-fullstack-project.git "$REPO_DIR"
             cd "$REPO_DIR/Backend"
             echo "✅ Backend: $(pwd)"
-            echo "📄 Files: $(ls -la *.sql 2>/dev/null || echo 'No .sql files')"
 
-            # ===== 3. TRY RDS IMPORT (NON-BLOCKING) =====
-            echo "☁️  RDS setup (optional)..."
+            # ===== 3. RDS IMPORT (SIMPLIFIED - NO MULTI-LINE) =====
+            echo "☁️  RDS setup..."
             if command -v mysql >/dev/null 2>&1 && [ -f "paytm.sql" ]; then
-              echo "🔗 Testing RDS: projectdb.c1uy4qas2jj8.ap-south-1.rds.amazonaws.com"
-              timeout 10 mysql -h projectdb.c1uy4qas2jj8.ap-south-1.rds.amazonaws.com \
-                -u admin -p'cloud123' -e "SE
+              echo "📄 Found paytm.sql ($(wc -c < paytm.sql) bytes)"
+              # SINGLE LINE - NO CONTINUATION CHARACTERS
+              timeout 10 mysql -h projectdb.c1uy4qas2jj8.ap-south-1.rds.amazonaws.com -u admin -pcloud123 -e "SELECT 1" >/dev/null 2>&1
+              if [ $? -eq 0 ]; then
+                echo "🌐 Importing to RDS..."
+                mysql -h projectdb.c1uy4qas2jj8.ap-south-1.rds.amazonaws.com -u admin -pcloud123 < paytm.sql
+                echo "✅ RDS imported!"
+              else
+                echo "⚠️ RDS unreachable - skipping import"
+              fi
+            else
+              echo "⚠️ Skipping RDS (mysql or paytm.sql missing)"
+            fi
+
+            # ===== 4. PYTHON SETUP =====
+            echo "🐍 Python environment..."
+            rm -rf venv
+            python3 -m venv venv
+            source venv/bin/activate
+            pip install --upgrade pip >/dev/null 2>&1
+            pip install -r requirements.txt >/dev/null 2>&1
+
+            # ===== 5. START APP =====
+            echo "▶️ Starting Flask..."
+            pkill -f rds.py || true
+            sleep 2
+            nohup python rds.py > backend.log 2>&1 < /dev/null &
+            sleep 25
+
+            # ===== 6. VERIFY =====
+            if pgrep -f "rds.py" >/dev/null 2>&1; then
+              PID=$(pgrep -f "rds.py")
+              echo "✅ 🎉 LIVE! PID: $PID"
+              echo "📋 Logs:"
+              tail -10 backend.log
+              echo "🎉 DEPLOYMENT COMPLETE!"
+            else
+              echo "❌ Failed to start"
+              tail -20 backend.log || echo "No logs"
+              exit 1
+            fi
