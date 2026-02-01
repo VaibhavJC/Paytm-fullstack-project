@@ -9,7 +9,7 @@ jobs:
     runs-on: ubuntu-latest
 
     steps:
-      - name: Deploy Backend using Bastion (First Time + RDS DB)
+      - name: Deploy Backend using Bastion (Amazon Linux 2023 + RDS)
         uses: appleboy/ssh-action@v1.0.3
         with:
           host: ${{ secrets.BACKEND_PRIVATE_IP }}
@@ -25,65 +25,27 @@ jobs:
           script_stop: true
 
           script: |
+            echo "🚀 Amazon Linux 2023 Backend + RDS deployment"
             set -e
-            echo "🚀 FIRST TIME Backend + RDS deployment started (Amazon Linux 2023)"
 
-            # ===== 1. INSTALL SYSTEM DEPENDENCIES - FIXED FOR AL2023 =====
-            echo "📦 Installing Amazon Linux 2023 dependencies..."
+            # ===== 1. MINIMAL DEPENDENCIES (Amazon Linux 2023) =====
+            echo "📦 Installing AL2023 dependencies..."
             sudo dnf makecache
-            sudo dnf install -y git python3 python3-pip mariadb105 mysql || echo "⚠️ Non-critical packages skipped"
-            echo "✅ Dependencies: git $(git --version), python $(python3 --version)"
+            sudo dnf install -y python3 python3-pip git mariadb105 || true
+            echo "✅ Ready: git $(git --version), python $(python3 --version)"
 
-            # ===== 2. CLONE REPOSITORY =====
-            echo "🔄 Cloning VaibhavJC/Paytm-fullstack-project..."
+            # ===== 2. CLEAN CLONE =====
+            echo "🔄 Cloning repository..."
             REPO_DIR="/home/ec2-user/Paytm-fullstack-project"
             rm -rf "$REPO_DIR"
             git clone https://github.com/VaibhavJC/Paytm-fullstack-project.git "$REPO_DIR"
             cd "$REPO_DIR/Backend"
+            echo "✅ Backend: $(pwd)"
+            echo "📄 Files: $(ls -la *.sql 2>/dev/null || echo 'No .sql files')"
 
-            echo "✅ Backend directory: $(pwd)"
-            echo "📂 Files: $(ls -la | head -4)"
-
-            # ===== 3. OPTIONAL RDS DATABASE IMPORT =====
-            echo "☁️  RDS Database setup..."
-            if [ -f "paytml.sql" ]; then
-              echo "📄 Found paytml.sql - testing RDS connection..."
-              timeout 10 mysql -h projectdb.c1uy4qas2jj8.ap-south-1.rds.amazonaws.com -u admin -pcloud123 -e "SELECT 1;" 2>/dev/null
-              if [ $? -eq 0 ]; then
-                echo "🌐 Importing to RDS..."
-                mysql -h projectdb.c1uy4qas2jj8.ap-south-1.rds.amazonaws.com -u admin -pcloud123 < paytml.sql
-                echo "✅ RDS import SUCCESS!"
-              else
-                echo "⚠️  RDS connection failed - skipping import"
-              fi
-            else
-              echo "⚠️  paytml.sql missing - skipping import"
-            fi
-
-            # ===== 4. PYTHON ENVIRONMENT =====
-            echo "🐍 Python setup..."
-            python3 -m venv venv
-            source venv/bin/activate
-            pip install --upgrade pip --quiet
-            pip install -r requirements.txt --quiet
-
-            # ===== 5. START APPLICATION =====
-            echo "▶️ Starting rds.py..."
-            nohup python rds.py > backend.log 2>&1 < /dev/null &
-            sleep 20
-
-            # ===== 6. FINAL VERIFICATION =====
-            if pgrep -f "rds.py" > /dev/null 2>&1; then
-              PID=$(pgrep -f "rds.py")
-              echo "✅ SUCCESS! Backend PID: $PID"
-              echo "📋 Startup logs:"
-              tail -15 backend.log || echo "Logs ready soon..."
-              echo "🎉 DEPLOYMENT 100% COMPLETE!"
-            else
-              echo "❌ Backend failed to start"
-              echo "📋 Check logs:"
-              tail -20 backend.log || echo "No logs generated"
-              echo "🔍 Processes:"
-              ps aux | grep python | head -3 || echo "No Python processes"
-              exit 1
-            fi
+            # ===== 3. TRY RDS IMPORT (NON-BLOCKING) =====
+            echo "☁️  RDS setup (optional)..."
+            if command -v mysql >/dev/null 2>&1 && [ -f "paytm.sql" ]; then
+              echo "🔗 Testing RDS: projectdb.c1uy4qas2jj8.ap-south-1.rds.amazonaws.com"
+              timeout 10 mysql -h projectdb.c1uy4qas2jj8.ap-south-1.rds.amazonaws.com \
+                -u admin -p'cloud123' -e "SE
