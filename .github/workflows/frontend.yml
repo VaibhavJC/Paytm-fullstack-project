@@ -24,11 +24,11 @@ jobs:
           script: |
             echo "🚀 Frontend + backends3.py (Port 5000)"
 
-            # 1. Clone repo
+            # 1. Clone repo (FIXED URL)
             sudo yum install git -y
             cd /home/ec2-user
             rm -rf Paytm-fullstack-project
-            git clone https://github.com/VaibhavJC/Paytm-fullstack-project.git
+            git clone https://github.com/CloudTechDevOps/Paytm-fullstack-project.git Paytm-fullstack-project
             cd Paytm-fullstack-project/Frontend/Frontend-S3
 
             # 2. Python setup for backends3.py (PORT 5000)
@@ -61,11 +61,12 @@ jobs:
             sudo systemctl start httpd
             sudo systemctl enable httpd
 
-            # 5. Deploy static files
+            # 5. Deploy static files (FIXED path)
             cd /home/ec2-user/Paytm-fullstack-project/
             sudo rm -rf /var/www/html/*
-            sudo cp -r Frontend/* /var/www/html/
+            sudo cp -r Frontend/* /var/www/html/ || sudo cp -r * /var/www/html/
             sudo systemctl restart httpd
+            sudo chown -R apache:apache /var/www/html
 
             echo "🎉 FRONTEND LIVE!"
             echo "🌐 Static: http://$(curl -s ifconfig.me)"
