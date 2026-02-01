@@ -28,67 +28,76 @@ jobs:
             set -e
             echo "🚀 FIRST TIME Backend + RDS deployment started"
 
-            # ===== 1. DEBUG + INSTALL SYSTEM DEPENDENCIES =====
-            echo "🐛 DEBUG: Current user: $(whoami)"
-            echo "🐛 DEBUG: OS detection..."
+            # ===== 1. INSTALL SYSTEM DEPENDENCIES =====
+            echo "📦 Installing system dependencies..."
             if command -v yum &> /dev/null; then
-              echo "🐛 Detected: Amazon Linux (yum)"
-              sudo yum makecache || echo "⚠️ yum makecache failed"
-              sudo yum install -y git python3 python3-pip mariadb || echo "⚠️ Some packages may be missing"
+              sudo yum makecache
+              sudo yum install -y git python3 python3-pip mariadb
             elif command -v apt-get &> /dev/null; then
-              echo "🐛 Detected: Ubuntu/Debian (apt)"
-              sudo apt-get update || echo "⚠️ apt update failed"
-              sudo apt-get install -y -qq git python3 python3-pip python3-venv mariadb-client || echo "⚠️ Some packages may be missing"
-            else
-              echo "❌ Unsupported OS - no package manager found"
-              exit 1
+              sudo apt-get update
+              sudo apt-get install -y -qq git python3 python3-pip python3-venv mariadb-client
             fi
+            echo "✅ System dependencies: git $(git --version), python $(python3 --version)"
 
-            echo "✅ System dependencies installed"
-            git --version || echo "⚠️ Git not available"
-            python3 --version || echo "⚠️ Python3 not available"
-            mysql --version || echo "⚠️ MySQL client not available"
-
-            # ===== 2. CLONE REPOSITORY =====
+            # ===== 2. CLONE REPOSITORY WITH VERIFICATION =====
             echo "🔄 Cloning VaibhavJC/Paytm-fullstack-project..."
             REPO_DIR="/home/ec2-user/Paytm-fullstack-project"
             rm -rf "$REPO_DIR"
-            git clone https://github.com/VaibhavJC/Paytm-fullstack-project.git "$REPO_DIR" || { echo "❌ Git clone failed"; exit 1; }
-            cd "$REPO_DIR/Backend" || { echo "❌ Backend directory not found"; exit 1; }
+            git clone https://github.com/VaibhavJC/Paytm-fullstack-project.git "$REPO_DIR"
+            
+            if [ ! -d "$REPO_DIR" ]; then
+              echo "❌ Git clone FAILED - directory not created"
+              exit 1
+            fi
+            
+            cd "$REPO_DIR/Backend" || { echo "❌ Backend directory missing"; exit 1; }
+            echo "✅ Cloned to: $(pwd)"
+            ls -la || echo "Directory listing failed"
 
-            # ===== 3. IMPORT DATABASE TO RDS =====
-            echo "☁️ Importing paytml.sql to AWS RDS..."
+            # ===== 3. OPTIONAL RDS DATABASE IMPORT =====
+            echo "☁️  Checking RDS import..."
             if [ -f "paytml.sql" ]; then
-              mysql -h projectdb.c1uy4qas2jj8.ap-south-1.rds.amazonaws.com -u admin -pcloud123 < paytml.sql
-              echo "✅ RDS Database imported successfully!"
+              echo "📄 Found paytml.sql ($(wc -l < paytml.sql) lines)"
+              echo "🔗 Testing RDS connectivity..."
+              
+              # Test connection first
+              timeout 10 mysql -h projectdb.c1uy4qas2jj8.ap-south-1.rds.amazonaws.com -u admin -pcloud123 -e "SELECT 1;" 
+              if [ $? -eq 0 ]; then
+                echo "🌐 RDS connection OK - importing..."
+                mysql -h projectdb.c1uy4qas2jj8.ap-south-1.rds.amazonaws.com -u admin -pcloud123 < paytml.sql
+                echo "✅ RDS Database imported!"
+              else
+                echo "⚠️  RDS connection FAILED - skipping import"
+              fi
             else
-              echo "⚠️ paytml.sql not found - skipping DB import"
+              echo "⚠️  paytml.sql NOT FOUND - skipping RDS import"
+              echo "📂 Backend files: $(ls -la | head -5)"
             fi
 
             # ===== 4. PYTHON ENVIRONMENT =====
-            echo "🐍 Creating Python virtual environment..."
-            python3 -m venv venv || { echo "❌ venv creation failed"; exit 1; }
+            echo "🐍 Setting up Python environment..."
+            python3 -m venv venv
             source venv/bin/activate
-            pip install --upgrade pip
-            pip install -r requirements.txt || { echo "❌ pip install failed"; exit 1; }
+            pip install --upgrade pip --quiet
+            pip install -r requirements.txt --quiet || echo "⚠️ Some pip packages may have failed"
 
             # ===== 5. START BACKEND =====
             echo "▶️ Starting Backend service..."
             nohup python rds.py > backend.log 2>&1 < /dev/null &
-            sleep 15
+            sleep 20  # Extra time for RDS connection
 
-            # ===== 6. VERIFY PROCESS =====
+            # ===== 6. VERIFY =====
             if pgrep -f "rds.py" > /dev/null; then
               PID=$(pgrep -f "rds.py")
-              echo "✅ Backend started successfully! PID: $PID"
-              echo "📋 First 15 lines of logs:"
-              tail -15 backend.log || echo "Logs not ready yet"
-              echo "🎉 FIRST DEPLOYMENT + RDS COMPLETED!"
+              echo "✅ Backend SUCCESS! PID: $PID"
+              echo "📋 Startup logs:"
+              tail -15 backend.log || echo "Logs not ready"
+              echo "🎉 DEPLOYMENT COMPLETED!"
             else
-              echo "❌ Backend FAILED to start!"
-              echo "📋 Check logs:"
+              echo "❌ Backend process not running"
+              echo "📋 Logs:"
               tail -20 backend.log || echo "No logs yet"
-              echo "🔍 Running processes:"
-              ps aux | grep rds.py | head -5 || echo "No rds.py process found"
+              echo "🔍 All python processes:"
+              ps aux | grep python | grep -v grep | head -3 || echo "No python processes"
               exit 1
             fi
