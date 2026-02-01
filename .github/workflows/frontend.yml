@@ -40,7 +40,7 @@ jobs:
 
             # Deploy static frontend files FROM Frontend-code
             echo "📁 Copying index.html from Frontend-code..."
-            cd /home/ec2-user/Paytm-fullstack-project/Frontend/Frontend-code
+            cd /home/ec2-user/Paytm-fullstack-project/Frontend
             sudo rm -rf /var/www/html/*
             sudo cp -r Frontend-code/* /var/www/html/
             sudo chown -R apache:apache /var/www/html
