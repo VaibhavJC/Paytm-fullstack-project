@@ -26,78 +26,64 @@ jobs:
 
           script: |
             set -e
-            echo "🚀 FIRST TIME Backend + RDS deployment started"
+            echo "🚀 FIRST TIME Backend + RDS deployment started (Amazon Linux 2023)"
 
-            # ===== 1. INSTALL SYSTEM DEPENDENCIES =====
-            echo "📦 Installing system dependencies..."
-            if command -v yum &> /dev/null; then
-              sudo yum makecache
-              sudo yum install -y git python3 python3-pip mariadb
-            elif command -v apt-get &> /dev/null; then
-              sudo apt-get update
-              sudo apt-get install -y -qq git python3 python3-pip python3-venv mariadb-client
-            fi
-            echo "✅ System dependencies: git $(git --version), python $(python3 --version)"
+            # ===== 1. INSTALL SYSTEM DEPENDENCIES - FIXED FOR AL2023 =====
+            echo "📦 Installing Amazon Linux 2023 dependencies..."
+            sudo dnf makecache
+            sudo dnf install -y git python3 python3-pip mariadb105 mysql || echo "⚠️ Non-critical packages skipped"
+            echo "✅ Dependencies: git $(git --version), python $(python3 --version)"
 
-            # ===== 2. CLONE REPOSITORY WITH VERIFICATION =====
+            # ===== 2. CLONE REPOSITORY =====
             echo "🔄 Cloning VaibhavJC/Paytm-fullstack-project..."
             REPO_DIR="/home/ec2-user/Paytm-fullstack-project"
             rm -rf "$REPO_DIR"
             git clone https://github.com/VaibhavJC/Paytm-fullstack-project.git "$REPO_DIR"
-            
-            if [ ! -d "$REPO_DIR" ]; then
-              echo "❌ Git clone FAILED - directory not created"
-              exit 1
-            fi
-            
-            cd "$REPO_DIR/Backend" || { echo "❌ Backend directory missing"; exit 1; }
-            echo "✅ Cloned to: $(pwd)"
-            ls -la || echo "Directory listing failed"
+            cd "$REPO_DIR/Backend"
+
+            echo "✅ Backend directory: $(pwd)"
+            echo "📂 Files: $(ls -la | head -4)"
 
             # ===== 3. OPTIONAL RDS DATABASE IMPORT =====
-            echo "☁️  Checking RDS import..."
+            echo "☁️  RDS Database setup..."
             if [ -f "paytml.sql" ]; then
-              echo "📄 Found paytml.sql ($(wc -l < paytml.sql) lines)"
-              echo "🔗 Testing RDS connectivity..."
-              
-              # Test connection first
-              timeout 10 mysql -h projectdb.c1uy4qas2jj8.ap-south-1.rds.amazonaws.com -u admin -pcloud123 -e "SELECT 1;" 
+              echo "📄 Found paytml.sql - testing RDS connection..."
+              timeout 10 mysql -h projectdb.c1uy4qas2jj8.ap-south-1.rds.amazonaws.com -u admin -pcloud123 -e "SELECT 1;" 2>/dev/null
               if [ $? -eq 0 ]; then
-                echo "🌐 RDS connection OK - importing..."
+                echo "🌐 Importing to RDS..."
                 mysql -h projectdb.c1uy4qas2jj8.ap-south-1.rds.amazonaws.com -u admin -pcloud123 < paytml.sql
-                echo "✅ RDS Database imported!"
+                echo "✅ RDS import SUCCESS!"
               else
-                echo "⚠️  RDS connection FAILED - skipping import"
+                echo "⚠️  RDS connection failed - skipping import"
               fi
             else
-              echo "⚠️  paytml.sql NOT FOUND - skipping RDS import"
-              echo "📂 Backend files: $(ls -la | head -5)"
+              echo "⚠️  paytml.sql missing - skipping import"
             fi
 
             # ===== 4. PYTHON ENVIRONMENT =====
-            echo "🐍 Setting up Python environment..."
+            echo "🐍 Python setup..."
             python3 -m venv venv
             source venv/bin/activate
             pip install --upgrade pip --quiet
-            pip install -r requirements.txt --quiet || echo "⚠️ Some pip packages may have failed"
+            pip install -r requirements.txt --quiet
 
-            # ===== 5. START BACKEND =====
-            echo "▶️ Starting Backend service..."
+            # ===== 5. START APPLICATION =====
+            echo "▶️ Starting rds.py..."
             nohup python rds.py > backend.log 2>&1 < /dev/null &
-            sleep 20  # Extra time for RDS connection
+            sleep 20
 
-            # ===== 6. VERIFY =====
-            if pgrep -f "rds.py" > /dev/null; then
+            # ===== 6. FINAL VERIFICATION =====
+            if pgrep -f "rds.py" > /dev/null 2>&1; then
               PID=$(pgrep -f "rds.py")
-              echo "✅ Backend SUCCESS! PID: $PID"
+              echo "✅ SUCCESS! Backend PID: $PID"
               echo "📋 Startup logs:"
-              tail -15 backend.log || echo "Logs not ready"
-              echo "🎉 DEPLOYMENT COMPLETED!"
+              tail -15 backend.log || echo "Logs ready soon..."
+              echo "🎉 DEPLOYMENT 100% COMPLETE!"
             else
-              echo "❌ Backend process not running"
-              echo "📋 Logs:"
-              tail -20 backend.log || echo "No logs yet"
-              echo "🔍 All python processes:"
-              ps aux | grep python | grep -v grep | head -3 || echo "No python processes"
+              echo "❌ Backend failed to start"
+              echo "📋 Check logs:"
+              tail -20 backend.log || echo "No logs generated"
+              echo "🔍 Processes:"
+              ps aux | grep python | head -3 || echo "No Python processes"
               exit 1
             fi
