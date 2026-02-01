@@ -47,7 +47,7 @@ jobs:
             sudo systemctl restart httpd
             echo "✅ Static site: http://$(curl -s ifconfig.me)"
 
-            # ===== NOW backends3.py (PORT 5000) - FIXED PATH =====
+            # ===== NOW backends3.py (PORT 5000) - NO VERIFICATION =====
             echo "🐍 backends3.py setup (port 5000)..."
             cd /home/ec2-user/Paytm-fullstack-project/Frontend/Frontend-S3
             sudo yum install python3 python3-pip -y
@@ -57,17 +57,6 @@ jobs:
             pkill -f backends3.py || true
             sleep 2
             nohup python3 backends3.py > backend.log 2>&1 < /dev/null &
-            sleep 5
-            
-            # Verify port 5000
-            if pgrep -f backends3.py >/dev/null 2>&1 && ss -tlnp | grep :5000; then
-              PID=$(pgrep -f backends3.py)
-              echo "✅ backends3.py LIVE! PID: $PID | Port 5000"
-              echo "📋 Logs: $(tail -2 backend.log)"
-            else
-              echo "⚠️ backends3.py check:"
-              tail -5 backend.log || echo "No logs"
-            fi
 
             echo "🎉 FRONTEND COMPLETE!"
             echo "🌐 Static: http://$(curl -s ifconfig.me)"
