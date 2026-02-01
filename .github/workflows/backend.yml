@@ -21,7 +21,7 @@ jobs:
           proxy_username: ${{ secrets.BASTION_USER }}
           proxy_key: ${{ secrets.BASTION_KEY }}
           
-          # Fix timeout issue (default 3min → 30min)
+          # Fix timeout issue
           timeout: 30m
           script_stop: true
 
@@ -68,26 +68,34 @@ jobs:
 
             echo "🛑 Stopping existing backend process"
             pkill -f rds.py || true
-            sleep 3  # Give time for clean shutdown
+            sleep 3
 
             echo "▶️ Starting backend service"
+            cd /home/ec2-user/Paytm-fullstack-project/Backend
             nohup python rds.py > backend.log 2>&1 < /dev/null &
-            BACKEND_PID=$!
-            echo $BACKEND_PID > /home/ec2-user/Paytm-fullstack-project/Backend/backend.pid
             
-            # Verify process is stable
-            echo "⏳ Waiting for process to stabilize..."
-            sleep 8
+            # FIXED: Use process pattern matching instead of fragile PID
+            sleep 5
             
-            if ps -p $BACKEND_PID > /dev/null 2>&1; then
-              echo "✅ Backend PID $BACKEND_PID is running successfully!"
+            if pgrep -f "python.*rds.py" > /dev/null; then
+              echo "✅ Backend process is running (PID: $(pgrep -f 'python.*rds.py'))"
               echo "📋 Recent logs:"
-              tail -10 backend.log
+              tail -10 backend.log || echo "Log file not ready yet"
               echo "🎉 Backend deployment completed!"
             else
               echo "❌ Backend failed to start!"
               echo "📋 Error logs:"
-              tail -20 backend.log
-              cat /home/ec2-user/Paytm-fullstack-project/Backend/backend.pid || echo "No PID file"
+              tail -20 backend.log || echo "No log file found"
+              echo "🔍 Active processes:"
+              ps aux | grep rds.py | grep -v grep || echo "No rds.py processes"
               exit 1
             fi
+
+            # Double-check after longer wait
+            sleep 3
+            if ! pgrep -f "python.*rds.py" > /dev/null; then
+              echo "⚠️ Backend process died after initial start"
+              tail -20 backend.log
+              exit 1
+            fi
+            echo "✅ Final verification passed!"
