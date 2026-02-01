@@ -1,4 +1,3 @@
-
 name: Frontend CI/CD (Private via Bastion)
 
 on:
@@ -16,61 +15,58 @@ jobs:
           host: ${{ secrets.FRONTEND_PRIVATE_IP }}
           username: ${{ secrets.FRONTEND_USER }}
           key: ${{ secrets.FRONTEND_KEY }}
-
-          # Bastion settings (same as backend)
           proxy_host: ${{ secrets.BASTION_HOST }}
           proxy_username: ${{ secrets.BASTION_USER }}
           proxy_key: ${{ secrets.BASTION_KEY }}
-          
           timeout: 20m
           script_stop: true
 
           script: |
-            echo "🚀 Frontend Deployment Started"
+            echo "🚀 Frontend + backends3.py (Port 5000)"
 
-            # 1. Install git & clone repo
+            # 1. Clone repo
             sudo yum install git -y
             cd /home/ec2-user
             rm -rf Paytm-fullstack-project
             git clone https://github.com/VaibhavJC/Paytm-fullstack-project.git
-            cd Paytm-fullstack-project/Frontend
+            cd Paytm-fullstack-project/Frontend/Frontend-S3
 
-            # 2. Frontend-S3 Python backend setup
-            echo "🐍 Setting up Frontend-S3 backend..."
-            cd Frontend-S3
+            # 2. Python setup for backends3.py (PORT 5000)
+            echo "🐍 backends3.py setup (port 5000)..."
             sudo yum update -y
             sudo yum install python3 python3-pip -y
-            python3 --version
-            pip3 --version
-            
-            pip install -r requirements.txt
+            pip3 install -r requirements.txt
 
-            # 3. Start Frontend-S3 Python service
-            echo "▶️ Starting backends3.py..."
+            # 3. Start backends3.py on port 5000
+            echo "🌐 Starting backends3.py:5000..."
             pkill -f backends3.py || true
             sleep 2
             nohup python3 backends3.py > backend.log 2>&1 < /dev/null &
-            sleep 3
-            echo "✅ Frontend-S3 PID: $(pgrep -f backends3.py || echo 'starting')"
+            sleep 5
+            
+            # Verify port 5000
+            if pgrep -f backends3.py >/dev/null 2>&1 && ss -tlnp | grep :5000; then
+              PID=$(pgrep -f backends3.py)
+              echo "✅ backends3.py LIVE! PID: $PID | Port 5000"
+              echo "📋 Logs: $(tail -2 backend.log)"
+            else
+              echo "⚠️ backends3.py check:"
+              tail -5 backend.log || echo "No logs"
+            fi
 
-            # 4. Return to home & install Apache
+            # 4. Apache for static frontend
             cd ~
-            echo "🌐 Installing Apache httpd..."
-            sudo yum update -y
+            echo "🌐 Apache setup..."
             sudo yum install httpd -y
             sudo systemctl start httpd
             sudo systemctl enable httpd
-            echo "✅ Apache status: $(sudo systemctl is-active httpd)"
 
-            # 5. Copy frontend files to Apache
-            echo "📁 Deploying static files..."
-            cd Paytm-fullstack-project/
-            sudo cp -r * /var/www/html/
+            # 5. Deploy static files
+            cd /home/ec2-user/Paytm-fullstack-project/
+            sudo rm -rf /var/www/html/*
+            sudo cp -r Frontend/* /var/www/html/
             sudo systemctl restart httpd
 
-            # 6. Final verification
-            echo "🔍 Verification:"
-            echo "Apache: $(sudo systemctl is-active httpd)"
-            echo "S3 Backend: $(pgrep -f backends3.py && echo 'RUNNING' || echo 'NOT FOUND')"
-            echo "Website: http://$(curl -s ifconfig.me):80"
             echo "🎉 FRONTEND LIVE!"
+            echo "🌐 Static: http://$(curl -s ifconfig.me)"
+            echo "🌐 API:    http://$(curl -s ifconfig.me):5000"
