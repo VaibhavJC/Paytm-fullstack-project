@@ -9,29 +9,36 @@ jobs:
     runs-on: ubuntu-latest
 
     steps:
-      - name: Checkout code
-        uses: actions/checkout@v4
-
       - name: Deploy Backend using Bastion
         uses: appleboy/ssh-action@v1.0.3
         with:
           host: ${{ secrets.BACKEND_PRIVATE_IP }}
           username: ${{ secrets.BACKEND_USER }}
-          key: ${{ secrets.BACKEND_KEY }}  # Separate key for backend instance
+          key: ${{ secrets.BACKEND_KEY }}
 
           # Bastion settings
           proxy_host: ${{ secrets.BASTION_HOST }}
           proxy_username: ${{ secrets.BASTION_USER }}
           proxy_key: ${{ secrets.BASTION_KEY }}
-          proxy_port: 22  # Default; adjust if needed
 
           script: |
-            set -e  # Exit on any error
+            set -e
             echo "🚀 Backend deployment started"
 
-            cd /home/ec2-user/Paytm-fullstack-project/Backend
+            REPO_DIR="/home/ec2-user/Paytm-fullstack-project"
+            REPO_URL="https://github.com/CloudTechDevOps/Paytm-fullstack-project.git"
 
-            git pull origin main
+            if [ -d "$REPO_DIR/.git" ]; then
+              echo "Repository exists, pulling latest changes"
+              cd "$REPO_DIR"
+              git pull origin main
+            else
+              echo "Cloning repository"
+              git clone "$REPO_URL" "$REPO_DIR"
+              cd "$REPO_DIR"
+            fi
+
+            cd Backend
 
             python3 -m venv venv || true
             source venv/bin/activate
@@ -44,4 +51,3 @@ jobs:
             nohup python rds.py > backend.log 2>&1 &
 
             echo "✅ Backend running"
-#t
