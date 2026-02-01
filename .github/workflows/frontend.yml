@@ -69,5 +69,4 @@ jobs:
             sudo chown -R apache:apache /var/www/html
 
             echo "🎉 FRONTEND LIVE!"
-            echo "🌐 Static: http://$(curl -s ifconfig.me)"
-            echo "🌐 API:    http://$(curl -s ifconfig.me):5000"
+    
