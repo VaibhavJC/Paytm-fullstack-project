@@ -15,40 +15,79 @@ jobs:
           host: ${{ secrets.BACKEND_PRIVATE_IP }}
           username: ${{ secrets.BACKEND_USER }}
           key: ${{ secrets.BACKEND_KEY }}
+
+          # Bastion settings
           proxy_host: ${{ secrets.BASTION_HOST }}
           proxy_username: ${{ secrets.BASTION_USER }}
           proxy_key: ${{ secrets.BASTION_KEY }}
-          timeout: 30m  # Increase SSH timeout
-          script_stop: true  # Wait for script completion
+          
+          # Fix timeout issue (default 3min → 30min)
+          timeout: 30m
+          script_stop: true
+
           script: |
             set -e
             echo "🚀 Backend deployment started"
 
-            # [Git installation + clone logic from previous response...]
+            # Install Git if not present
+            if ! command -v git &> /dev/null; then
+              echo "Installing Git..."
+              if command -v yum &> /dev/null; then
+                sudo yum update -y && sudo yum install -y git
+              elif command -v apt &> /dev/null; then
+                sudo apt update && sudo apt install -y git
+              else
+                echo "Unsupported package manager"
+                exit 1
+              fi
+            else
+              echo "✅ Git already installed"
+            fi
+
+            REPO_DIR="/home/ec2-user/Paytm-fullstack-project"
+            REPO_URL="https://github.com/CloudTechDevOps/Paytm-fullstack-project.git"
+
+            if [ -d "$REPO_DIR/.git" ]; then
+              echo "📥 Repository exists, pulling latest changes"
+              cd "$REPO_DIR"
+              git pull origin main
+            else
+              echo "🔄 Cloning repository for first time"
+              git clone "$REPO_URL" "$REPO_DIR"
+              cd "$REPO_DIR"
+            fi
 
             cd Backend
+
+            echo "🐍 Setting up Python environment"
             python3 -m venv venv || true
             source venv/bin/activate
+
             pip install --upgrade pip
             pip install -r requirements.txt
 
-            # Kill existing process
+            echo "🛑 Stopping existing backend process"
             pkill -f rds.py || true
-            sleep 2  # Wait for clean shutdown
+            sleep 3  # Give time for clean shutdown
 
-            # Start with logging and PID file
+            echo "▶️ Starting backend service"
             nohup python rds.py > backend.log 2>&1 < /dev/null &
             BACKEND_PID=$!
-            echo $BACKEND_PID > backend.pid
+            echo $BACKEND_PID > /home/ec2-user/Paytm-fullstack-project/Backend/backend.pid
             
-            # Verify it's running
-            sleep 5
-            if ps -p $BACKEND_PID > /dev/null; then
-              echo "✅ Backend PID $BACKEND_PID running"
-              tail -5 backend.log
+            # Verify process is stable
+            echo "⏳ Waiting for process to stabilize..."
+            sleep 8
+            
+            if ps -p $BACKEND_PID > /dev/null 2>&1; then
+              echo "✅ Backend PID $BACKEND_PID is running successfully!"
+              echo "📋 Recent logs:"
+              tail -10 backend.log
+              echo "🎉 Backend deployment completed!"
             else
-              echo "❌ Backend failed to start"
+              echo "❌ Backend failed to start!"
+              echo "📋 Error logs:"
               tail -20 backend.log
+              cat /home/ec2-user/Paytm-fullstack-project/Backend/backend.pid || echo "No PID file"
               exit 1
             fi
-
