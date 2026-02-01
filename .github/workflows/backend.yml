@@ -25,6 +25,21 @@ jobs:
             set -e
             echo "🚀 Backend deployment started"
 
+            # Install Git if not present
+            if ! command -v git &> /dev/null; then
+              echo "Installing Git..."
+              if command -v yum &> /dev/null; then
+                sudo yum update -y && sudo yum install -y git
+              elif command -v apt &> /dev/null; then
+                sudo apt update && sudo apt install -y git
+              else
+                echo "Unsupported package manager"
+                exit 1
+              fi
+            else
+              echo "Git already installed"
+            fi
+
             REPO_DIR="/home/ec2-user/Paytm-fullstack-project"
             REPO_URL="https://github.com/CloudTechDevOps/Paytm-fullstack-project.git"
 
