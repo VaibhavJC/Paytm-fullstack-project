@@ -21,7 +21,6 @@ jobs:
           proxy_username: ${{ secrets.BASTION_USER }}
           proxy_key: ${{ secrets.BASTION_KEY }}
           
-          # Extended timeout for DB import
           timeout: 60m
           script_stop: true
 
@@ -29,61 +28,67 @@ jobs:
             set -e
             echo "🚀 FIRST TIME Backend + RDS deployment started"
 
-            # Install dependencies (Git + Python tools + MySQL client)
-            echo "📦 Installing system dependencies..."
+            # ===== 1. DEBUG + INSTALL SYSTEM DEPENDENCIES =====
+            echo "🐛 DEBUG: Current user: $(whoami)"
+            echo "🐛 DEBUG: OS detection..."
             if command -v yum &> /dev/null; then
-              sudo yum update -y &>/dev/null
-              sudo yum install -y git python3 python3-pip mariadb105 mysql &>/dev/null
-            elif command -v apt &> /dev/null; then
-              sudo apt update &>/dev/null
-              sudo apt install -y git python3 python3-pip python3-venv mariadb-client -y &>/dev/null
-            fi
-            echo "✅ System dependencies installed"
-
-            # Clone repository (fresh install) - NEW REPO
-            echo "🔄 Cloning VaibhavJC/Paytm-fullstack-project..."
-            REPO_DIR="/home/ec2-user/Paytm-fullstack-project"
-            rm -rf "$REPO_DIR"  # Clean any partial clone
-            git clone https://github.com/VaibhavJC/Paytm-fullstack-project.git "$REPO_DIR"
-            cd "$REPO_DIR/Backend"
-
-            # ===== CRITICAL: IMPORT DATABASE SCHEMA TO RDS =====
-            echo "☁️  Importing paytml.sql to AWS RDS..."
-            mysql -h projectdb.c1uy4qas2jj8.ap-south-1.rds.amazonaws.com \
-                  -u admin \
-                  -pcloud123 \
-                  < paytml.sql
-            
-            if [ $? -eq 0 ]; then
-              echo "✅ RDS Database imported successfully!"
+              echo "🐛 Detected: Amazon Linux (yum)"
+              sudo yum makecache || echo "⚠️ yum makecache failed"
+              sudo yum install -y git python3 python3-pip mariadb || echo "⚠️ Some packages may be missing"
+            elif command -v apt-get &> /dev/null; then
+              echo "🐛 Detected: Ubuntu/Debian (apt)"
+              sudo apt-get update || echo "⚠️ apt update failed"
+              sudo apt-get install -y -qq git python3 python3-pip python3-venv mariadb-client || echo "⚠️ Some packages may be missing"
             else
-              echo "❌ RDS import failed!"
+              echo "❌ Unsupported OS - no package manager found"
               exit 1
             fi
 
-            # Setup Python environment
+            echo "✅ System dependencies installed"
+            git --version || echo "⚠️ Git not available"
+            python3 --version || echo "⚠️ Python3 not available"
+            mysql --version || echo "⚠️ MySQL client not available"
+
+            # ===== 2. CLONE REPOSITORY =====
+            echo "🔄 Cloning VaibhavJC/Paytm-fullstack-project..."
+            REPO_DIR="/home/ec2-user/Paytm-fullstack-project"
+            rm -rf "$REPO_DIR"
+            git clone https://github.com/VaibhavJC/Paytm-fullstack-project.git "$REPO_DIR" || { echo "❌ Git clone failed"; exit 1; }
+            cd "$REPO_DIR/Backend" || { echo "❌ Backend directory not found"; exit 1; }
+
+            # ===== 3. IMPORT DATABASE TO RDS =====
+            echo "☁️ Importing paytml.sql to AWS RDS..."
+            if [ -f "paytml.sql" ]; then
+              mysql -h projectdb.c1uy4qas2jj8.ap-south-1.rds.amazonaws.com -u admin -pcloud123 < paytml.sql
+              echo "✅ RDS Database imported successfully!"
+            else
+              echo "⚠️ paytml.sql not found - skipping DB import"
+            fi
+
+            # ===== 4. PYTHON ENVIRONMENT =====
             echo "🐍 Creating Python virtual environment..."
-            python3 -m venv venv
+            python3 -m venv venv || { echo "❌ venv creation failed"; exit 1; }
             source venv/bin/activate
             pip install --upgrade pip
-            pip install -r requirements.txt
+            pip install -r requirements.txt || { echo "❌ pip install failed"; exit 1; }
 
-            echo "▶️ Starting Backend service (with RDS connection)..."
+            # ===== 5. START BACKEND =====
+            echo "▶️ Starting Backend service..."
             nohup python rds.py > backend.log 2>&1 < /dev/null &
-            sleep 15  # Give Flask + RDS connection time
+            sleep 15
 
-            # SIMPLE PROCESS CHECK
+            # ===== 6. VERIFY PROCESS =====
             if pgrep -f "rds.py" > /dev/null; then
               PID=$(pgrep -f "rds.py")
               echo "✅ Backend started successfully! PID: $PID"
               echo "📋 First 15 lines of logs:"
               tail -15 backend.log || echo "Logs not ready yet"
-              echo "🎉 FIRST DEPLOYMENT + RDS DB IMPORT COMPLETED!"
+              echo "🎉 FIRST DEPLOYMENT + RDS COMPLETED!"
             else
               echo "❌ Backend FAILED to start!"
               echo "📋 Check logs:"
               tail -20 backend.log || echo "No logs yet"
               echo "🔍 Running processes:"
-              ps aux | grep rds.py || echo "No rds.py process found"
+              ps aux | grep rds.py | head -5 || echo "No rds.py process found"
               exit 1
             fi
