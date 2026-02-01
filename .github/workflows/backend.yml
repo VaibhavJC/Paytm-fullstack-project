@@ -1,28 +1,32 @@
-
 name: Backend CI/CD (Private via Bastion)
 
 on:
   push:
-    branches: [ "main" ]
+    branches: ["main"]
 
 jobs:
   deploy-backend:
     runs-on: ubuntu-latest
 
     steps:
+      - name: Checkout code
+        uses: actions/checkout@v4
+
       - name: Deploy Backend using Bastion
         uses: appleboy/ssh-action@v1.0.3
         with:
           host: ${{ secrets.BACKEND_PRIVATE_IP }}
           username: ${{ secrets.BACKEND_USER }}
-          key: ${{ secrets.BASTION_KEY }}
+          key: ${{ secrets.BACKEND_KEY }}  # Separate key for backend instance
 
           # Bastion settings
           proxy_host: ${{ secrets.BASTION_HOST }}
           proxy_username: ${{ secrets.BASTION_USER }}
           proxy_key: ${{ secrets.BASTION_KEY }}
+          proxy_port: 22  # Default; adjust if needed
 
           script: |
+            set -e  # Exit on any error
             echo "🚀 Backend deployment started"
 
             cd /home/ec2-user/Paytm-fullstack-project/Backend
@@ -40,5 +44,3 @@ jobs:
             nohup python rds.py > backend.log 2>&1 &
 
             echo "✅ Backend running"
-
-            #The End ...
