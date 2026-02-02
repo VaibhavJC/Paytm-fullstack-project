@@ -27,61 +27,40 @@ jobs:
           script: |
             set -e
             echo "🚀 Backend deployment started"
-
-            # ===== 0. KILL EXISTING BACKEND PROCESS (NEW) =====
+          
+            # ===== 0. SAFE PROCESS KILL =====
             echo "🗑️ Killing existing backend processes..."
             if pgrep -f "rds.py" > /dev/null; then
-              echo "🔪 Found running rds.py process(es), killing..."
-              pkill -f "rds.py" || echo "No rds.py process found"
-              sleep 3  # Give time for graceful shutdown
-              # Force kill any stubborn processes
-              pkill -9 -f "rds.py" || echo "No stubborn processes"
+              echo "🔪 Found running rds.py process(es), killing gracefully..."
+              pkill -f "rds.py" || true
+              sleep 3
+              pkill -9 -f "rds.py" || true
               echo "✅ Old backend processes terminated"
             else
               echo "ℹ️ No existing backend process found"
             fi
-
-            # ===== 1. INSTALL SYSTEM DEPENDENCIES (if needed) =====
-            echo "📦 Checking/Installing system dependencies..."
-            if ! command -v python3 &> /dev/null; then
-              if command -v yum &> /dev/null; then
-                sudo yum update -y &>/dev/null
-                sudo yum install -y git python3 python3-pip &>/dev/null
-              elif command -v apt &> /dev/null; then
-                sudo apt update &>/dev/null
-                sudo apt install -y git python3 python3-pip python3-venv &>/dev/null
-              fi
-            fi
-            echo "✅ Dependencies ready"
-
-            # ===== 2. SETUP PROJECT DIRECTORY =====
-            echo "🔄 Setting up project directory..."
+          
+            # ===== 1. SETUP PROJECT =====
+            echo "🔄 Setting up project..."
             REPO_DIR="/home/ec2-user/Paytm-fullstack-project"
-            cd /home/ec2-user || echo "Directory exists"
-            
-            # Stopped MariaDB installation since you're using RDS
-            # Only clone if directory doesn't exist or force fresh clone
-            if [ ! -d "$REPO_DIR" ] || [ -z "$(ls -A "$REPO_DIR")" ]; then
-              echo "📥 Cloning fresh repository..."
-              rm -rf "$REPO_DIR"
-              git clone https://github.com/VaibhavJC/Paytm-fullstack-project.git "$REPO_DIR"
-            else
-              echo "🔄 Pulling latest changes..."
+            if [ -d "$REPO_DIR" ]; then
               cd "$REPO_DIR"
-              git pull origin main
+              git pull origin main || (rm -rf "$REPO_DIR" && git clone https://github.com/VaibhavJC/Paytm-fullstack-project.git "$REPO_DIR")
+            else
+              git clone https://github.com/VaibhavJC/Paytm-fullstack-project.git "$REPO_DIR"
             fi
             cd "$REPO_DIR/Backend"
-
-            # ===== 3. SETUP PYTHON ENVIRONMENT =====
+          
+            # ===== 2. PYTHON ENVIRONMENT =====
             echo "🐍 Setting up Python environment..."
             if [ ! -d "venv" ]; then
               python3 -m venv venv
             fi
             source venv/bin/activate
             pip install --upgrade pip
-            pip install -r requirements.txt
-
-            # ===== 4. START BACKEND SERVICE =====
+            pip install -r requirements.txt --quiet
+          
+            # ===== 3. START NEW BACKEND =====
             echo "▶️ Starting new Backend service..."
             nohup python rds.py > backend.log 2>&1 < /dev/null &
             NEW_PID=$!
@@ -89,16 +68,15 @@ jobs:
             
             # Wait and verify
             sleep 10
-            if ps -p $NEW_PID > /dev/null 2>&1; then
-              echo "✅ Backend started successfully! PID: $NEW_PID"
+            if ps -p $NEW_PID > /dev/null 2>&1 || pgrep -f "rds.py" > /dev/null; then
+              echo "✅ Backend started successfully!"
               echo "📋 Recent logs:"
-              tail -15 backend.log || echo "Logs not ready yet"
-              curl -s http://localhost:5000/ > /dev/null && echo "🌐 Local endpoint responding!" || echo "⚠️ Local endpoint not ready yet"
+              tail -15 backend.log || echo "Logs not ready"
+              curl -s http://localhost:5000/ > /dev/null && echo "🌐 Local endpoint OK!" || echo "⚠️ Endpoint warming up..."
+              echo "🎉 DEPLOYMENT COMPLETED!"
             else
-              echo "❌ Backend FAILED to start!"
-              echo "📋 Check logs:"
-              tail -20 backend.log || echo "No logs available"
-              ps aux | grep rds.py || echo "No rds.py process running"
+              echo "❌ Backend startup verification failed"
+              tail -20 backend.log
+              ps aux | grep rds.py
               exit 1
             fi
-            echo "🎉 DEPLOYMENT COMPLETED SUCCESSFULLY!"
