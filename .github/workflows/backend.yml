@@ -89,3 +89,4 @@ jobs:
               sudo systemctl status mariadb --no-pager -l || echo "MariaDB check failed"
               exit 1
             fi
+#The End
