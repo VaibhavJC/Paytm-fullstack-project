@@ -7,10 +7,10 @@ CORS(app)  # Allow frontend to call backend
 
 # RDS MySQL config
 db_config = {
-    "host": "projectdb.c1uy4qas2jj8.ap-south-1.rds.amazonaws.com",  #add your rds  
+    "host": "projectdb.c1uy4qas2jj8.ap-south-1.rds.amazonaws.com",  # add your rds
     "user": "admin",
-    "password": "cloud123",  #add your password 
-    "database": "paytm"  #add your db name 
+    "password": "cloud123",  # add your password
+    "database": "paytm"  # add your db name
 }
 
 def get_db_connection():
@@ -20,6 +20,12 @@ def get_db_connection():
         password=db_config["password"],
         database=db_config["database"]
     )
+
+# ---------- HEALTH CHECK ----------
+@app.route("/health", methods=["GET"])
+def health():
+    return jsonify({"status": "UP"}), 200
+
 
 # ---------- SIGNUP / SAVE ----------
 @app.route("/api/save", methods=["POST"])
@@ -78,5 +84,3 @@ def login_user():
 
 if __name__ == "__main__":
     app.run(host="0.0.0.0", port=5000)
-
-
