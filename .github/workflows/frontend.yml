@@ -28,7 +28,7 @@ jobs:
             sudo yum install git -y
             cd /home/ec2-user
             rm -rf Paytm-fullstack-project
-            git clone https://github.com/CloudTechDevOps/Paytm-fullstack-project.git Paytm-fullstack-project
+            git clone https://github.com/VaibhavJC/Paytm-fullstack-project.git Paytm-fullstack-project
 
             # ===== HTTPD TASKS FIRST =====
             echo "🌐 Setting up Apache httpd..."
